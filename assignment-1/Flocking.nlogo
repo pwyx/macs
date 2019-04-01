@@ -1,60 +1,157 @@
-turtles-own [
-  flockmates         ;; agentset of nearby turtles
+breed [ prey a-prey ]
+breed [ predators a-predator ]
+
+prey-own [
+  flockmates         ;; agentset of nearby prey
   nearest-neighbor   ;; closest one of our flockmates
+  nearest-predator   ;; closest predator to individual prey
+  visible-predators  ;; agentset of visible predators
 ]
+
+predators-own [
+  nearest-prey       ;; closest individual prey
+  visible-prey       ;; agentset of closest prey
+]
+
+to load
+  ; prey defaults
+  set prey-population 300
+  set prey-speed 1
+  set prey-vision-angle 360
+  set prey-vision-distance 7.5
+  set minimum-separation 1
+  set max-align-turn 5
+  set max-cohere-turn 3
+  set max-separate-turn 1.5
+  set max-evade-turn 10
+
+  ; predator defaults
+  set predator-population 1
+  set predator-speed 1
+  set predator-vision-angle 340
+  set predator-vision-distance 10
+  set max-predator-turn 10
+end
 
 to setup
   clear-all
-  create-turtles population
-    [ set color yellow - 2 + random 7  ;; random shades look nice
-      set size 1.5  ;; easier to see
-      setxy random-xcor random-ycor
-      set flockmates no-turtles ]
+
+  ask patches [ set pcolor sky + 3 ]
+
+  create-prey prey-population [
+    set color brown - 2 + (who mod 5)
+    set size 1.5  ;; easier to see
+    setxy random-xcor random-ycor
+    set flockmates no-turtles
+  ]
+
+  create-predators predator-population [
+    set color brown - 5 + (who mod 3)
+    set size 3
+    setxy random-xcor random-ycor
+  ]
+
   reset-ticks
 end
 
 to go
-  ask turtles [ flock ]
-  ;; the following line is used to make the turtles
-  ;; animate more smoothly.
-  repeat 5 [ ask turtles [ fd 0.2 ] display ]
-  ;; for greater efficiency, at the expense of smooth
-  ;; animation, substitute the following line instead:
-  ;;   ask turtles [ fd 1 ]
+  ask prey [
+    evade
+    flock
+    ifelse any? visible-predators
+      [ set color red ]
+      [ set color brown - 2 + (who mod 3) ]
+  ]
+  repeat 5 [ ask prey [ fd 0.2 ] display ]
+  ask predators [ chase ]
+  repeat 5 [ ask predators [ fd predator-speed / 5 ] display ]
   tick
 end
 
-to flock  ;; turtle procedure
+to chase
+  find-visible-prey
+  if nearest-prey != nobody
+    [ hunt ]
+end
+
+to hunt
+  find-visible-prey
+  if any? visible-prey
+  [
+    set nearest-prey min-one-of visible-prey [ distance myself ]
+    turn-towards nearest-prey-heading max-predator-turn
+  ]
+end
+
+to find-visible-prey ;; predator procedure
+  set visible-prey prey in-cone predator-vision-distance predator-vision-angle
+  if any? visible-prey [
+    set nearest-prey min-one-of visible-prey [ distance myself ]
+  ]
+end
+
+to flock  ;; prey procedure
   find-flockmates
-  if any? flockmates
-    [ find-nearest-neighbor
-      ifelse distance nearest-neighbor < minimum-separation
-        [ separate ]
-        [ align
-          cohere ] ]
+  if any? flockmates [
+    find-nearest-neighbor
+    ifelse distance nearest-neighbor < minimum-separation
+      [ separate ]
+      [ align
+        cohere ]
+  ]
 end
 
-to find-flockmates  ;; turtle procedure
-  set flockmates other turtles in-radius vision
+to evade
+  find-visible-predators
+  if any? visible-predators [
+   let predator-heading [towards myself + 180] of min-one-of predators [distance myself]
+   turn-away predator-heading max-evade-turn
+  ]
+
+  ; flock closer together when predators are present
+  ; if any? flockmates [ turn-towards average-heading-towards-flockmates max-evade-turn ]
+
+  ; speed boost when being chased
+  fd prey-speed / 2
 end
 
-to find-nearest-neighbor ;; turtle procedure
-  set nearest-neighbor min-one-of flockmates [distance myself]
+to find-visible-predators
+  set visible-predators predators in-cone prey-vision-distance prey-vision-angle
+  if any? visible-predators [
+    set nearest-predator min-one-of visible-predators [ distance myself ]
+  ]
+end
+
+to-report nearest-prey-heading ; predator procedure
+  report [towards myself + 180] of nearest-prey
+end
+
+to-report nearest-predator-heading ; prey procedure
+  report [towards myself + 180] of nearest-predator
+end
+
+
+to find-flockmates  ;; prey procedure
+  set flockmates other prey in-cone prey-vision-distance prey-vision-angle
+end
+
+to find-nearest-neighbor ;; prey procedure
+  set nearest-neighbor min-one-of flockmates [ distance myself ]
 end
 
 ;;; SEPARATE
 
-to separate  ;; turtle procedure
+to separate  ;; prey procedure
   turn-away ([heading] of nearest-neighbor) max-separate-turn
 end
 
 ;;; ALIGN
 
-to align  ;; turtle procedure
+to align  ;; prey procedure
   turn-towards average-flockmate-heading max-align-turn
 end
 
-to-report average-flockmate-heading  ;; turtle procedure
+to-report average-flockmate-heading  ;; prey procedure
   ;; We can't just average the heading variables here.
   ;; For example, the average of 1 and 359 should be 0,
   ;; not 180.  So we have to use trigonometry.
@@ -67,13 +164,13 @@ end
 
 ;;; COHERE
 
-to cohere  ;; turtle procedure
+to cohere  ;; prey procedure
   turn-towards average-heading-towards-flockmates max-cohere-turn
 end
 
-to-report average-heading-towards-flockmates  ;; turtle procedure
-  ;; "towards myself" gives us the heading from the other turtle
-  ;; to me, but we want the heading from me to the other turtle,
+to-report average-heading-towards-flockmates  ;; prey procedure
+  ;; "towards myself" gives us the heading from the other prey
+  ;; to me, but we want the heading from me to the other prey,
   ;; so we add 180
   let x-component mean [sin (towards myself + 180)] of flockmates
   let y-component mean [cos (towards myself + 180)] of flockmates
@@ -107,10 +204,10 @@ end
 ; See Info tab for full copyright and license.
 @#$#@#$#@
 GRAPHICS-WINDOW
-250
-10
-755
-516
+200
+11
+705
+517
 -1
 -1
 7.0
@@ -127,18 +224,18 @@ GRAPHICS-WINDOW
 35
 -35
 35
-1
-1
+0
+0
 1
 ticks
 30.0
 
 BUTTON
-39
-93
-116
-126
-NIL
+97
+389
+181
+422
+Setup
 setup
 NIL
 1
@@ -151,11 +248,11 @@ NIL
 1
 
 BUTTON
-122
-93
-203
-126
-NIL
+12
+430
+180
+463
+Go
 go
 T
 1
@@ -170,23 +267,23 @@ NIL
 SLIDER
 9
 51
-232
+180
 84
-population
-population
-1.0
+prey-population
+prey-population
+0
 1000.0
 300.0
-1.0
+10
 1
-NIL
+starlings
 HORIZONTAL
 
 SLIDER
-4
-217
-237
-250
+8
+211
+189
+244
 max-align-turn
 max-align-turn
 0.0
@@ -198,10 +295,10 @@ degrees
 HORIZONTAL
 
 SLIDER
-4
-251
-237
-284
+8
+245
+188
+278
 max-cohere-turn
 max-cohere-turn
 0.0
@@ -213,10 +310,10 @@ degrees
 HORIZONTAL
 
 SLIDER
-4
-285
-237
-318
+8
+279
+188
+312
 max-separate-turn
 max-separate-turn
 0.0
@@ -230,14 +327,14 @@ HORIZONTAL
 SLIDER
 9
 135
-232
+189
 168
-vision
-vision
+prey-vision-distance
+prey-vision-distance
 0.0
-10.0
-5.0
-0.5
+20
+7.5
+1
 1
 patches
 HORIZONTAL
@@ -245,7 +342,7 @@ HORIZONTAL
 SLIDER
 9
 169
-232
+189
 202
 minimum-separation
 minimum-separation
@@ -256,6 +353,143 @@ minimum-separation
 1
 patches
 HORIZONTAL
+
+SLIDER
+714
+50
+892
+83
+predator-vision-angle
+predator-vision-angle
+10
+360
+340.0
+10
+1
+°
+HORIZONTAL
+
+SLIDER
+9
+101
+189
+134
+prey-vision-angle
+prey-vision-angle
+10
+360
+360.0
+10
+1
+°
+HORIZONTAL
+
+SLIDER
+715
+10
+878
+43
+predator-population
+predator-population
+0
+10
+1.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+713
+90
+912
+123
+predator-vision-distance
+predator-vision-distance
+0
+50
+10.0
+2
+1
+patches
+HORIZONTAL
+
+SLIDER
+712
+131
+924
+164
+predator-speed
+predator-speed
+0
+10
+1.0
+0.5
+1
+patches per second 
+HORIZONTAL
+
+SLIDER
+711
+174
+883
+207
+max-predator-turn
+max-predator-turn
+0
+20
+10.0
+0.25
+1
+NIL
+HORIZONTAL
+
+SLIDER
+9
+314
+187
+347
+max-evade-turn
+max-evade-turn
+0
+20.0
+10.0
+0.5
+1
+degrees
+HORIZONTAL
+
+SLIDER
+9
+349
+187
+382
+prey-speed
+prey-speed
+0
+10
+1.0
+1
+1
+patches per second
+HORIZONTAL
+
+BUTTON
+10
+388
+89
+421
+Load
+load
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
 
 @#$#@#$#@
 ## WHAT IS IT?
