@@ -1,73 +1,61 @@
-globals [ max-sheep ]  ; don't let sheep population grow too large
-; Sheep and wolves are both breeds of turtle.
-breed [ sheep a-sheep ]  ; sheep is its own plural, so we use "a-sheep" as the singular.
-breed [ wolves wolf ]
-turtles-own [ energy ]       ; both wolves and sheep have energy
-patches-own [ countdown ]
+globals [ max-sheep ]       ; don't let sheep population grow too large
+breed [ sheep a-sheep ]
+
+sheep-own [
+  energy
+  owner
+]
+
+patches-own [
+  countdown
+]
 
 to setup
   clear-all
-  ifelse netlogo-web? [set max-sheep 10000] [set max-sheep 30000]
+  set max-sheep 30000
 
-  ; Check model-version switch
-  ; if we're not modeling grass, then the sheep don't need to eat to survive
-  ; otherwise the grass's state of growth and growing logic need to be set up
-  ifelse model-version = "sheep-wolves-grass" [
-    ask patches [
-      set pcolor one-of [ green brown ]
-      ifelse pcolor = green
-        [ set countdown grass-regrowth-time ]
+  ask patches [
+    set pcolor one-of [ green brown ]
+    ifelse pcolor = green
+      [ set countdown grass-regrowth-time ]
       [ set countdown random grass-regrowth-time ] ; initialize grass regrowth clocks randomly for brown patches
-    ]
-  ]
-  [
-    ask patches [ set pcolor green ]
   ]
 
-  create-sheep initial-number-sheep  ; create the sheep, then initialize their variables
-  [
+  create-sheep initial-black-sheep [
+    set shape "sheep"
+    set color black
+    set size 2
+    set energy random (2 * sheep-gain-from-food)
+    setxy random-xcor random-ycor
+  ]
+
+  create-sheep initial-white-sheep [
     set shape  "sheep"
     set color white
-    set size 1.5  ; easier to see
+    set size 2
     set label-color blue - 2
     set energy random (2 * sheep-gain-from-food)
     setxy random-xcor random-ycor
   ]
 
-  create-wolves initial-number-wolves  ; create the wolves, then initialize their variables
-  [
-    set shape "wolf"
-    set color black
-    set size 2  ; easier to see
-    set energy random (2 * wolf-gain-from-food)
-    setxy random-xcor random-ycor
-  ]
   display-labels
   reset-ticks
 end
 
 to go
-  ; stop the simulation of no wolves or sheep
   if not any? turtles [ stop ]
-  ; stop the model if there are no wolves and the number of sheep gets very large
-  if not any? wolves and count sheep > max-sheep [ user-message "The sheep have inherited the earth" stop ]
+
   ask sheep [
     move
-    if model-version = "sheep-wolves-grass" [ ; in this version, sheep eat grass, grass grows and it costs sheep energy to move
-      set energy energy - 1  ; deduct energy for sheep only if running sheep-wolf-grass model version
-      eat-grass  ; sheep eat grass only if running sheep-wolf-grass model version
-      death ; sheep die from starvation only if running sheep-wolf-grass model version
-    ]
-    reproduce-sheep  ; sheep reproduce at random rate governed by slider
+    ; in this version, sheep eat grass, grass grows and it costs sheep energy to move
+    set energy energy - 1  ; deduct energy for sheep only if running sheep-wolf-grass model version
+    eat-grass  ; sheep eat grass only if running sheep-wolf-grass model version
+    death ; sheep die from starvation only if running sheep-wolf-grass model version
+
+    reproduce  ; sheep reproduce at random rate governed by slider
   ]
-  ask wolves [
-    move
-    set energy energy - 1  ; wolves lose energy as they move
-    eat-sheep ; wolves eat a sheep on their patch
-    death ; wolves die if our of energy
-    reproduce-wolves ; wolves reproduce at random rate governed by slider
-  ]
-  if model-version = "sheep-wolves-grass" [ ask patches [ grow-grass ] ]
+
+  ask patches [ grow-grass ]
   ; set grass count patches with [pcolor = green]
   tick
   display-labels
@@ -87,25 +75,10 @@ to eat-grass  ; sheep procedure
   ]
 end
 
-to reproduce-sheep  ; sheep procedure
-  if random-float 100 < sheep-reproduce [  ; throw "dice" to see if you will reproduce
-    set energy (energy / 2)                ; divide energy between parent and offspring
-    hatch 1 [ rt random-float 360 fd 1 ]   ; hatch an offspring and move it forward 1 step
-  ]
-end
-
-to reproduce-wolves  ; wolf procedure
-  if random-float 100 < wolf-reproduce [  ; throw "dice" to see if you will reproduce
-    set energy (energy / 2)               ; divide energy between parent and offspring
-    hatch 1 [ rt random-float 360 fd 1 ]  ; hatch an offspring and move it forward 1 step
-  ]
-end
-
-to eat-sheep  ; wolf procedure
-  let prey one-of sheep-here                    ; grab a random sheep
-  if prey != nobody  [                          ; did we get one?  if so,
-    ask prey [ die ]                            ; kill it, and...
-    set energy energy + wolf-gain-from-food     ; get energy from eating
+to reproduce                                     ; sheep procedure
+  if random-float 100 < sheep-reproduce-rate [   ; throw "dice" to see if you will reproduce
+    set energy (energy / 2)                      ; divide energy between parent and offspring
+    hatch 1 [ rt random-float 360 fd 1 ]         ; hatch an offspring and move it forward 1 step
   ]
 end
 
@@ -125,21 +98,23 @@ to grow-grass  ; patch procedure
 end
 
 to-report grass
-  ifelse model-version = "sheep-wolves-grass" [
-    report patches with [pcolor = green]
-  ]
-  [ report 0 ]
+  report patches with [pcolor = green]
 end
-
 
 to display-labels
   ask turtles [ set label "" ]
   if show-energy? [
-    ask wolves [ set label round energy ]
-    if model-version = "sheep-wolves-grass" [ ask sheep [ set label round energy ] ]
+    ask sheep [ set label round energy ]
   ]
 end
 
+to-report black-sheep
+  report sheep with [color = black]
+end
+
+to-report white-sheep
+  report sheep with [color = white]
+end
 
 ; Copyright 1997 Uri Wilensky.
 ; See Info tab for full copyright and license.
@@ -158,13 +133,13 @@ GRAPHICS-WINDOW
 1
 1
 0
-1
-1
+0
+0
 1
 -25
 25
--25
-25
+0
+50
 1
 1
 1
@@ -176,21 +151,21 @@ SLIDER
 60
 179
 93
-initial-number-sheep
-initial-number-sheep
+initial-black-sheep
+initial-black-sheep
 0
 250
-100.0
+50.0
 1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-5
-196
-179
-229
+10
+225
+184
+258
 sheep-gain-from-food
 sheep-gain-from-food
 0.0
@@ -202,12 +177,12 @@ NIL
 HORIZONTAL
 
 SLIDER
-5
-231
-179
-264
-sheep-reproduce
-sheep-reproduce
+10
+260
+187
+293
+sheep-reproduce-rate
+sheep-reproduce-rate
 1.0
 20.0
 4.0
@@ -221,8 +196,8 @@ SLIDER
 60
 350
 93
-initial-number-wolves
-initial-number-wolves
+initial-white-sheep
+initial-white-sheep
 0
 250
 50.0
@@ -232,40 +207,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-183
-195
-348
-228
-wolf-gain-from-food
-wolf-gain-from-food
-0.0
-100.0
-20.0
-1.0
-1
-NIL
-HORIZONTAL
-
-SLIDER
-183
-231
-348
-264
-wolf-reproduce
-wolf-reproduce
-0.0
-20.0
-5.0
-1.0
-1
-%
-HORIZONTAL
-
-SLIDER
-40
-100
-252
-133
+185
+224
+335
+257
 grass-regrowth-time
 grass-regrowth-time
 0
@@ -279,9 +224,9 @@ HORIZONTAL
 BUTTON
 40
 140
-109
+107
 173
-setup
+Setup
 setup
 NIL
 1
@@ -298,7 +243,7 @@ BUTTON
 140
 190
 173
-go
+Go
 go
 T
 1
@@ -326,17 +271,17 @@ true
 true
 "" ""
 PENS
-"sheep" 1.0 0 -612749 true "" "plot count sheep"
-"wolves" 1.0 0 -16449023 true "" "plot count wolves"
-"grass / 4" 1.0 0 -10899396 true "" "if model-version = \"sheep-wolves-grass\" [ plot count grass / 4 ]"
+"White Sheep" 1.0 0 -612749 true "" "plot count white-sheep"
+"Black Sheep" 1.0 0 -16449023 true "" "plot count black-sheep"
+"Grass / 4" 1.0 0 -10899396 true "" "plot count grass / 4"
 
 MONITOR
 41
 308
-111
+123
 353
-sheep
-count sheep
+White Sheep
+count white-sheep
 3
 1
 11
@@ -344,10 +289,10 @@ count sheep
 MONITOR
 115
 308
-185
+192
 353
-wolves
-count wolves
+Black Sheep
+count black-sheep
 3
 1
 11
@@ -357,52 +302,42 @@ MONITOR
 308
 256
 353
-grass
+Grass
 count grass / 4
 0
 1
 11
 
 TEXTBOX
-20
-178
-160
-196
-Sheep settings
+40
+30
+180
+48
+Farmer A Settings
 11
 0.0
 0
 
 TEXTBOX
-198
-176
-311
-194
-Wolf settings
+220
+30
+333
+46
+Farmer B Settings
 11
 0.0
 0
 
 SWITCH
-105
-270
-241
-303
+185
+259
+321
+292
 show-energy?
 show-energy?
 1
 1
 -1000
-
-CHOOSER
-5
-10
-350
-55
-model-version
-model-version
-"sheep-wolves" "sheep-wolves-grass"
-0
 
 @#$#@#$#@
 ## WHAT IS IT?
