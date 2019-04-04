@@ -1,32 +1,80 @@
-globals [ max-sheep ]       ; don't let sheep population grow too large
+breed [ farmers farmer ]
 breed [ sheep a-sheep ]
 
 sheep-own [
-  energy
   owner
+  energy
+]
+
+farmers-own [
+  id
+  max-sheep
+  section-3?
 ]
 
 patches-own [
+  section
   countdown
 ]
 
+to update-inputs
+  ask farmer-a [
+    set section-3? black-section-3?
+  ]
+
+  ask farmer-b [
+    set section-3? white-section-3?
+  ]
+
+  ask sheep [
+    ; kill sheep if inputs change and they're no longer in a legal area
+    if [ section-3? ] of owner = false and [ section ] of patch-here = 3 [ die ]
+  ]
+end
+
 to setup
   clear-all
-  set max-sheep 30000
 
   ask patches [
     set pcolor one-of [ green brown ]
     ifelse pcolor = green
       [ set countdown grass-regrowth-time ]
       [ set countdown random grass-regrowth-time ] ; initialize grass regrowth clocks randomly for brown patches
+
+    ; split the world up into sections A, B and C
+    ifelse pycor > 8
+      [ set section 1 ]
+      [ ifelse pycor < -8
+        [ set section 2 ]
+        [ set section 3 ]
+    ]
+  ]
+
+  ; farmer A
+  create-farmers 1 [
+    hide-turtle
+    set id 1
+    set max-sheep max-black-sheep
+    set section-3? black-section-3?
+  ]
+
+  ; farmer B
+  create-farmers 1 [
+    hide-turtle
+    set id 2
+    set max-sheep max-white-sheep
+    set section-3? white-section-3?
   ]
 
   create-sheep initial-black-sheep [
     set shape "sheep"
     set color black
     set size 2
+    set owner one-of farmers with [id = 1]
     set energy random (2 * sheep-gain-from-food)
-    setxy random-xcor random-ycor
+    ifelse black-section-3?
+      [ setxy random-xcor (random 50 mod 34) - 25 + 17 ]
+      [ setxy random-xcor (random 50 mod 17) - 25 + 34 ]
   ]
 
   create-sheep initial-white-sheep [
@@ -34,8 +82,11 @@ to setup
     set color white
     set size 2
     set label-color blue - 2
+    set owner one-of farmers with [id = 2]
     set energy random (2 * sheep-gain-from-food)
-    setxy random-xcor random-ycor
+    ifelse white-section-3?
+      [ setxy random-xcor (random 50 mod 34) - 25 ]
+      [ setxy random-xcor (random 50 mod 17) - 25 ]
   ]
 
   display-labels
@@ -43,28 +94,46 @@ to setup
 end
 
 to go
+  update-inputs
+
   if not any? turtles [ stop ]
 
   ask sheep [
     move
-    ; in this version, sheep eat grass, grass grows and it costs sheep energy to move
-    set energy energy - 1  ; deduct energy for sheep only if running sheep-wolf-grass model version
-    eat-grass  ; sheep eat grass only if running sheep-wolf-grass model version
-    death ; sheep die from starvation only if running sheep-wolf-grass model version
-
-    reproduce  ; sheep reproduce at random rate governed by slider
+    set energy energy - 1  ; moving decreases energy
+    eat-grass              ; sheep restore energy by eating grass
+    death                  ; sheep die from starvation
+    reproduce              ; sheep reproduce at random rate governed by slider
   ]
 
   ask patches [ grow-grass ]
-  ; set grass count patches with [pcolor = green]
+
   tick
   display-labels
 end
 
-to move  ; turtle procedure
+to move  ; sheep procedure
   rt random 50
   lt random 50
-  fd 1
+  ifelse can-move-ahead?
+    [ fd 1 stop ]
+
+    ; turn until sheep can move a step forward (stay within the paddock and only enter legal sections)
+    [ repeat 10 [
+        rt random 360
+        lt random 360
+        if can-move-ahead? [ fd 1 stop ]
+      ]
+    ]
+end
+
+to-report can-move-ahead?
+  if patch-ahead 1 = nobody [ report false ]
+
+  let section-ahead [ section ] of patch-ahead 1
+  ifelse ([section-3?] of owner) = false
+    [ report section-ahead = ([ id ] of owner) ]
+    [ report section-ahead = ([ id ] of owner) or section-ahead = 3 ]
 end
 
 to eat-grass  ; sheep procedure
@@ -77,8 +146,11 @@ end
 
 to reproduce                                     ; sheep procedure
   if random-float 100 < sheep-reproduce-rate [   ; throw "dice" to see if you will reproduce
-    set energy (energy / 2)                      ; divide energy between parent and offspring
-    hatch 1 [ rt random-float 360 fd 1 ]         ; hatch an offspring and move it forward 1 step
+    let sheep-count count sheep with [owner = [owner] of myself]
+    if (sheep-count < [max-sheep] of owner) [  ; don't reproduce if max-sheep has been reached
+      set energy (energy / 2)                      ; divide energy between parent and offspring
+      hatch 1 [ rt random-float 360 fd 1 ]         ; hatch an offspring and move it forward 1 step
+    ]
   ]
 end
 
@@ -116,6 +188,14 @@ to-report white-sheep
   report sheep with [color = white]
 end
 
+to-report farmer-a
+  report one-of farmers with [ id = 1 ]
+end
+
+to-report farmer-b
+  report one-of farmers with [ id = 2 ]
+end
+
 ; Copyright 1997 Uri Wilensky.
 ; See Info tab for full copyright and license.
 @#$#@#$#@
@@ -138,8 +218,8 @@ GRAPHICS-WINDOW
 1
 -25
 25
-0
-50
+-25
+25
 1
 1
 1
@@ -149,7 +229,7 @@ ticks
 SLIDER
 5
 60
-179
+180
 93
 initial-black-sheep
 initial-black-sheep
@@ -222,10 +302,10 @@ NIL
 HORIZONTAL
 
 BUTTON
-40
-140
-107
-173
+65
+170
+132
+203
 Setup
 setup
 NIL
@@ -239,10 +319,10 @@ NIL
 1
 
 BUTTON
-115
 140
-190
-173
+170
+215
+203
 Go
 go
 T
@@ -331,10 +411,62 @@ Farmer B Settings
 SWITCH
 185
 259
-321
+335
 292
 show-energy?
 show-energy?
+1
+1
+-1000
+
+SLIDER
+185
+95
+350
+128
+max-white-sheep
+max-white-sheep
+0
+200
+60.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+5
+95
+180
+128
+max-black-sheep
+max-black-sheep
+0
+200
+60.0
+1
+1
+NIL
+HORIZONTAL
+
+SWITCH
+5
+130
+180
+163
+black-section-3?
+black-section-3?
+1
+1
+-1000
+
+SWITCH
+185
+130
+350
+163
+white-section-3?
+white-section-3?
 1
 1
 -1000
