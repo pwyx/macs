@@ -1,92 +1,93 @@
 breed [ farmers farmer ]
 breed [ sheep a-sheep ]
 
-sheep-own [
-  owner
-  energy
+farmers-own [
+  paddock           ; the section of the world the farmer owns (either 1 or 2)
+  max-sheep         ; the maximum amount of sheep the farmer wants to have
+  section-3?        ; whether the farmer will allow his sheep to enter section 3
 ]
 
-farmers-own [
-  id
-  max-sheep
-  section-3?
+sheep-own [
+  grazier           ; the farmer that owns this sheep
+  energy            ; amount of energy this sheep has, sheep dies if this reaches 0
 ]
 
 patches-own [
-  section
-  countdown
+  section           ; the section of the world that this patch is apart of
+  countdown         ; the number of ticks before the grass has recovered
 ]
 
-to update-inputs
-  ask farmer-a [
-    set section-3? black-section-3?
-  ]
-
-  ask farmer-b [
-    set section-3? white-section-3?
-  ]
-
-  ask sheep [
-    ; kill sheep if inputs change and they're no longer in a legal area
-    if [ section-3? ] of owner = false and [ section ] of patch-here = 3 [ die ]
-  ]
+to load-default-settings
+  set a-initial-sheep 50
+  set b-initial-sheep 50
+  set a-max-sheep 200
+  set b-max-sheep 200
+  set a-section-3? false
+  set b-section-3? false
+  set sheep-gain-from-food 4
+  set sheep-reproduce-rate 4
+  set grass-regrowth-time 20
+  set show-energy? false
 end
 
 to setup
   clear-all
 
   ask patches [
-    set pcolor one-of [ green brown ]
-    ifelse pcolor = green
-      [ set countdown grass-regrowth-time ]
-      [ set countdown random grass-regrowth-time ] ; initialize grass regrowth clocks randomly for brown patches
-
-    ; split the world up into sections A, B and C
+    ; split world into 3 sections
     ifelse pycor > 8
       [ set section 1 ]
       [ ifelse pycor < -8
         [ set section 2 ]
-        [ set section 3 ]
-    ]
+        [ set section 3 ] ]
+
+    ; colour the patches
+    set-pcolor one-of [ green brown ]
+    ifelse pcolor = green
+      [ set countdown grass-regrowth-time ]
+      [ set countdown random grass-regrowth-time ] ; initialize grass regrowth clocks randomly for brown patches
   ]
 
-  ; farmer A
+  ; Farmer A
   create-farmers 1 [
     hide-turtle
-    set id 1
-    set max-sheep max-black-sheep
-    set section-3? black-section-3?
+    set paddock 1
+    set max-sheep a-max-sheep
+    set section-3? a-section-3?
   ]
 
-  ; farmer B
+  ; Farmer B
   create-farmers 1 [
     hide-turtle
-    set id 2
-    set max-sheep max-white-sheep
-    set section-3? white-section-3?
+    set paddock 2
+    set max-sheep b-max-sheep
+    set section-3? b-section-3?
   ]
 
-  create-sheep initial-black-sheep [
+  ; Farmer A's Sheep
+  create-sheep a-initial-sheep [
     set shape "sheep"
-    set color black
-    set size 2
-    set owner one-of farmers with [id = 1]
+    set color white
+    set label-color black
+    set size 1.5
+    set grazier farmer-a
     set energy random (2 * sheep-gain-from-food)
-    ifelse black-section-3?
-      [ setxy random-xcor (random 50 mod 34) - 25 + 17 ]
-      [ setxy random-xcor (random 50 mod 17) - 25 + 34 ]
+    ifelse a-section-3?
+      [ setxy random-xcor (random 34) - 8 ]
+      [ setxy random-xcor (random 17) + 9 ]
   ]
 
-  create-sheep initial-white-sheep [
+  ; Farmer B's Sheep
+  create-sheep b-initial-sheep [
     set shape  "sheep"
-    set color white
-    set size 2
-    set label-color blue - 2
-    set owner one-of farmers with [id = 2]
+    set color black
+    set size 1.5
+    set label-color white
+    set grazier farmer-b
     set energy random (2 * sheep-gain-from-food)
-    ifelse white-section-3?
-      [ setxy random-xcor (random 50 mod 34) - 25 ]
-      [ setxy random-xcor (random 50 mod 17) - 25 ]
+    ifelse b-section-3?
+      [ setxy random-xcor (random 34) - 25 ]
+      [ setxy random-xcor (random 17) - 25 ]
   ]
 
   display-labels
@@ -95,8 +96,7 @@ end
 
 to go
   update-inputs
-
-  if not any? turtles [ stop ]
+  if not any? sheep [ stop ]
 
   ask sheep [
     move
@@ -110,6 +110,23 @@ to go
 
   tick
   display-labels
+end
+
+to update-inputs  ; system procedure
+  ask farmer-a [
+    set section-3? a-section-3?
+    set max-sheep a-max-sheep
+  ]
+
+  ask farmer-b [
+    set section-3? b-section-3?
+    set max-sheep b-max-sheep
+  ]
+
+  ; kill sheep if inputs change and they're no longer in a legal area
+  ask sheep [
+    if [ section-3? ] of grazier = false and [ section ] of patch-here = 3 [ die ]
+  ]
 end
 
 to move  ; sheep procedure
@@ -127,74 +144,87 @@ to move  ; sheep procedure
     ]
 end
 
+; helper function to check if moving to the next patch is legal
 to-report can-move-ahead?
   if patch-ahead 1 = nobody [ report false ]
 
   let section-ahead [ section ] of patch-ahead 1
-  ifelse ([section-3?] of owner) = false
-    [ report section-ahead = ([ id ] of owner) ]
-    [ report section-ahead = ([ id ] of owner) or section-ahead = 3 ]
+  ifelse ([section-3?] of grazier) = false
+    [ report section-ahead = ([ paddock ] of grazier) ]
+    [ report section-ahead = ([ paddock ] of grazier) or section-ahead = 3 ]
 end
 
 to eat-grass  ; sheep procedure
   ; sheep eat grass, turn the patch brown
-  if pcolor = green [
-    set pcolor brown
+  if pcolor-is? green [
+    set-pcolor brown
     set energy energy + sheep-gain-from-food  ; sheep gain energy by eating
   ]
 end
 
-to reproduce                                     ; sheep procedure
-  if random-float 100 < sheep-reproduce-rate [   ; throw "dice" to see if you will reproduce
-    let sheep-count count sheep with [owner = [owner] of myself]
-    if (sheep-count < [max-sheep] of owner) [  ; don't reproduce if max-sheep has been reached
+to reproduce                                       ; sheep procedure
+  if random-float 100 < sheep-reproduce-rate [     ; throw "dice" to see if this sheep will reproduce
+    let num-sheep count sheep with [grazier = [grazier] of myself]
+    if (num-sheep < [max-sheep] of grazier) [      ; don't reproduce if max-sheep has been reached
       set energy (energy / 2)                      ; divide energy between parent and offspring
       hatch 1 [ rt random-float 360 fd 1 ]         ; hatch an offspring and move it forward 1 step
     ]
   ]
 end
 
-to death  ; turtle procedure (i.e. both wolf nd sheep procedure)
+to death  ; sheep procedure
   ; when energy dips below zero, die
   if energy < 0 [ die ]
 end
 
 to grow-grass  ; patch procedure
   ; countdown on brown patches: if reach 0, grow some grass
-  if pcolor = brown [
+  if pcolor-is? brown [
     ifelse countdown <= 0
-      [ set pcolor green
+      [ set-pcolor green
         set countdown grass-regrowth-time ]
       [ set countdown countdown - 1 ]
   ]
 end
 
-to-report grass
-  report patches with [pcolor = green]
-end
-
 to display-labels
-  ask turtles [ set label "" ]
-  if show-energy? [
-    ask sheep [ set label round energy ]
-  ]
-end
-
-to-report black-sheep
-  report sheep with [color = black]
-end
-
-to-report white-sheep
-  report sheep with [color = white]
+  ifelse show-energy?
+    [ ask sheep [ set label round energy ] ]
+    [ ask sheep [ set label "" ] ]
 end
 
 to-report farmer-a
-  report one-of farmers with [ id = 1 ]
+  report one-of farmers with [ paddock = 1 ]
 end
 
 to-report farmer-b
-  report one-of farmers with [ id = 2 ]
+  report one-of farmers with [ paddock = 2 ]
 end
+
+to-report fa-sheep
+  report sheep with [ grazier = farmer-a ]
+end
+
+to-report fb-sheep
+  report sheep with [ grazier = farmer-b ]
+end
+
+to-report grass
+  report patches with [ pcolor-is? green ]
+end
+
+; helper function to read the true colour of a patch
+to-report pcolor-is? [ colour ]
+  report pcolor <= colour and pcolor > colour - 1
+end
+
+; helper function to write the colour of a patch based on the section
+to set-pcolor [new-colour]
+  ifelse section = 3
+    [ set pcolor new-colour ]
+    [ set pcolor new-colour - 0.5 ]
+end
+
 
 ; Copyright 1997 Uri Wilensky.
 ; See Info tab for full copyright and license.
@@ -202,11 +232,11 @@ end
 GRAPHICS-WINDOW
 355
 10
-873
-529
+924
+580
 -1
 -1
-10.0
+11.0
 1
 14
 1
@@ -228,11 +258,11 @@ ticks
 
 SLIDER
 5
-60
+35
 180
-93
-initial-black-sheep
-initial-black-sheep
+68
+a-initial-sheep
+a-initial-sheep
 0
 250
 50.0
@@ -242,10 +272,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-10
-225
-184
-258
+5
+450
+180
+483
 sheep-gain-from-food
 sheep-gain-from-food
 0.0
@@ -257,10 +287,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-10
-260
-187
-293
+5
+485
+180
+518
 sheep-reproduce-rate
 sheep-reproduce-rate
 1.0
@@ -273,11 +303,11 @@ HORIZONTAL
 
 SLIDER
 185
-60
+35
 350
-93
-initial-white-sheep
-initial-white-sheep
+68
+b-initial-sheep
+b-initial-sheep
 0
 250
 50.0
@@ -288,24 +318,24 @@ HORIZONTAL
 
 SLIDER
 185
-224
-335
-257
+450
+350
+483
 grass-regrowth-time
 grass-regrowth-time
 0
 100
-30.0
+20.0
 1
 1
 NIL
 HORIZONTAL
 
 BUTTON
-65
-170
-132
-203
+125
+523
+235
+578
 Setup
 setup
 NIL
@@ -319,10 +349,10 @@ NIL
 1
 
 BUTTON
-140
-170
-215
-203
+240
+523
+350
+578
 Go
 go
 T
@@ -336,83 +366,83 @@ NIL
 0
 
 PLOT
-10
-360
+5
+585
 350
-530
+730
 populations
 time
 pop.
 0.0
-100.0
+200.0
 0.0
-100.0
+200.0
 true
 true
 "" ""
 PENS
-"White Sheep" 1.0 0 -612749 true "" "plot count white-sheep"
-"Black Sheep" 1.0 0 -16449023 true "" "plot count black-sheep"
+"Farmer A's Sheep" 1.0 0 -612749 true "" "plot count fa-sheep"
+"Farmer B's Sheep" 1.0 0 -16449023 true "" "plot count fb-sheep"
 "Grass / 4" 1.0 0 -10899396 true "" "plot count grass / 4"
 
 MONITOR
-41
-308
-123
-353
-White Sheep
-count white-sheep
-3
+530
+685
+715
+730
+FA Total Sheep
+count fa-sheep
+0
 1
 11
 
 MONITOR
-115
-308
-192
-353
-Black Sheep
-count black-sheep
-3
+740
+585
+925
+630
+FB Total Sheep
+count fb-sheep
+0
 1
 11
 
 MONITOR
-191
-308
-256
-353
-Grass
-count grass / 4
+930
+385
+1000
+430
+S1 Grass
+count grass with [ section = 1 ]
 0
 1
 11
 
 TEXTBOX
-40
+35
+10
+165
 30
-180
-48
 Farmer A Settings
-11
+16
 0.0
-0
+1
 
 TEXTBOX
-220
+210
+10
+340
 30
-333
-46
 Farmer B Settings
-11
+16
 0.0
-0
+1
 
 SWITCH
 185
-259
-335
-292
+485
+350
+518
 show-energy?
 show-energy?
 1
@@ -421,14 +451,14 @@ show-energy?
 
 SLIDER
 185
-95
+70
 350
-128
-max-white-sheep
-max-white-sheep
+103
+b-max-sheep
+b-max-sheep
 0
 200
-60.0
+200.0
 1
 1
 NIL
@@ -436,14 +466,14 @@ HORIZONTAL
 
 SLIDER
 5
-95
+70
 180
-128
-max-black-sheep
-max-black-sheep
+103
+a-max-sheep
+a-max-sheep
 0
 200
-60.0
+200.0
 1
 1
 NIL
@@ -451,25 +481,283 @@ HORIZONTAL
 
 SWITCH
 5
-130
+105
 180
-163
-black-section-3?
-black-section-3?
-1
+138
+a-section-3?
+a-section-3?
+0
 1
 -1000
 
 SWITCH
 185
-130
+105
 350
-163
-white-section-3?
-white-section-3?
-1
+138
+b-section-3?
+b-section-3?
+0
 1
 -1000
+
+TEXTBOX
+110
+425
+270
+445
+Miscellaneous Settings
+16
+0.0
+1
+
+BUTTON
+5
+523
+120
+578
+Default Settings
+load-default-settings
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+MONITOR
+930
+485
+1000
+530
+S2 Grass
+count grass with [ section = 2 ]
+0
+1
+11
+
+MONITOR
+930
+435
+1000
+480
+S3 Grass
+count grass with [ section = 3 ]
+0
+1
+11
+
+MONITOR
+1005
+385
+1075
+430
+S1 Grass %
+100 * (count grass with [ section = 1 ] / count patches with [ section = 1 ])
+2
+1
+11
+
+MONITOR
+1005
+485
+1075
+530
+S2 Grass %
+100 * (count grass with [ section = 2 ] / count patches with [ section = 2 ])
+2
+1
+11
+
+MONITOR
+1005
+435
+1075
+480
+S3 Grass %
+100 * (count grass with [ section = 3 ] / count patches with [ section = 3 ])
+2
+1
+11
+
+MONITOR
+530
+585
+620
+630
+FA S1 Sheep
+count fa-sheep with [ [ section ] of patch-here = 1 ]
+0
+1
+11
+
+MONITOR
+530
+635
+620
+680
+FA S3 Sheep
+count fa-sheep with [ [ section ] of patch-here = 3 ]
+0
+1
+11
+
+MONITOR
+740
+685
+830
+730
+FB S2 Sheep
+count fb-sheep with [ [ section ] of patch-here = 2 ]
+0
+1
+11
+
+MONITOR
+740
+635
+830
+680
+FB S3 Sheep
+count fb-sheep with [ [ section ] of patch-here = 3 ]
+0
+1
+11
+
+MONITOR
+355
+585
+425
+630
+S1 Sheep
+count sheep with [ [ section ] of patch-here = 1 ]
+17
+1
+11
+
+MONITOR
+355
+685
+425
+730
+S2 Sheep
+count sheep with [ [ section ] of patch-here = 2 ]
+0
+1
+11
+
+MONITOR
+355
+635
+425
+680
+S3 Sheep
+count sheep with [ [ section ] of patch-here = 3 ]
+0
+1
+11
+
+MONITOR
+430
+585
+500
+630
+S1 Sheep %
+100 * (count sheep with [ [ section ] of patch-here = 1 ]) / (count sheep)
+2
+1
+11
+
+MONITOR
+430
+635
+500
+680
+S3 Sheep %
+100 * (count sheep with [ [ section ] of patch-here = 3 ]) / (count sheep)
+2
+1
+11
+
+MONITOR
+430
+685
+500
+730
+S2 Sheep %
+100 * (count sheep with [ [ section ] of patch-here = 2 ]) / (count sheep)
+2
+1
+11
+
+MONITOR
+625
+585
+715
+630
+FA S1 Sheep %
+100 * (count fa-sheep with [ [ section ] of patch-here = 1 ] / count fa-sheep)
+2
+1
+11
+
+MONITOR
+625
+635
+715
+680
+FA S3 Sheep %
+100 * (count fa-sheep with [ [ section ] of patch-here = 3 ] / count fa-sheep)
+2
+1
+11
+
+MONITOR
+835
+685
+925
+730
+FB S2 Sheep %
+100 * (count fb-sheep with [ [ section ] of patch-here = 2 ] / count fb-sheep)
+2
+1
+11
+
+MONITOR
+835
+635
+925
+680
+FB S3 Sheep %
+100 * (count fb-sheep with [ [ section ] of patch-here = 3 ]) / (count fb-sheep)
+2
+1
+11
+
+MONITOR
+1005
+535
+1075
+580
+Grass %
+100 * (count grass / count patches)
+2
+1
+11
+
+MONITOR
+930
+535
+1000
+580
+Grass
+count grass
+0
+1
+11
 
 @#$#@#$#@
 ## WHAT IS IT?
