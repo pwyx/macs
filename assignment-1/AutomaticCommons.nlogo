@@ -2,33 +2,41 @@ breed [ farmers farmer ]
 breed [ sheep a-sheep ]
 
 farmers-own [
-  paddock           ; the section of the world the farmer owns (either 1 or 2)
-  max-sheep         ; the maximum amount of sheep the farmer wants to have
-  sheep-increasing? ; the number of sheep is still stabilizing
-  section-3?        ; whether the farmer will allow his sheep to enter section 3
+  paddock               ; the section of the world the farmer owns (either 1 or 2)
+  max-sheep             ; the maximum amount of sheep the farmer wants to have
+  fluctuation-tolerance ; the amount of sheep a farmer will tolerate their sheep population fluctuating by
+  previous-populations  ; last 100 counts of sheep taken at each tick
+  previous-adjustment   ; last direction of adjustment (up = 1, down = -1 or none = 0)
+  adjustment-amount     ; the number of sheep to add or remove to max-sheep in one adjustment
+  sheep-increasing?     ; the number of sheep is still stabilizing
+  section-3?            ; whether the farmer will allow his sheep to enter section 3
 ]
 
 sheep-own [
-  grazier           ; the farmer that owns this sheep
-  energy            ; amount of energy this sheep has, sheep dies if this reaches 0
+  grazier              ; the farmer that owns this sheep
+  energy               ; amount of energy this sheep has, sheep dies if this reaches 0
 ]
 
 patches-own [
-  section           ; the section of the world that this patch is apart of
-  countdown         ; the number of ticks before the grass has recovered
+  section              ; the section of the world that this patch is apart of
+  countdown            ; the number of ticks before the grass has recovered
 ]
 
 to load-default-settings
   set a-initial-sheep 50
   set b-initial-sheep 50
+  set a-max-sheep 100
+  set b-max-sheep 100
   set a-section-3? false
   set b-section-3? false
+  set a-initial-adjustment-amount 32
+  set b-initial-adjustment-amount 32
+  set a-fluctuation-tolerance 5
+  set b-fluctuation-tolerance 5
   set sheep-gain-from-food 4
   set sheep-reproduce-rate 4
   set grass-regrowth-time 20
   set show-energy? false
-  set population-adjustment 2
-  set adjustment-tolerance 10
 end
 
 to setup
@@ -54,7 +62,10 @@ to setup
     hide-turtle
     set paddock 1
     set max-sheep a-initial-sheep
-    set sheep-increasing? true
+    set previous-populations []
+    set previous-adjustment 0
+    set fluctuation-tolerance a-fluctuation-tolerance
+    set adjustment-amount a-initial-adjustment-amount
     set section-3? a-section-3?
   ]
 
@@ -63,7 +74,10 @@ to setup
     hide-turtle
     set paddock 2
     set max-sheep b-initial-sheep
-    set sheep-increasing? true
+    set previous-populations []
+    set previous-adjustment 0
+    set fluctuation-tolerance b-fluctuation-tolerance
+    set adjustment-amount b-initial-adjustment-amount
     set section-3? b-section-3?
   ]
 
@@ -111,6 +125,8 @@ to go
 
   ask patches [ grow-grass ]
 
+  ask farmers [ manage-population ]
+
   tick
   display-labels
 end
@@ -118,20 +134,24 @@ end
 to update-inputs  ; system procedure
   ask farmer-a [
     set section-3? a-section-3?
-    ifelse max-sheep - count fa-sheep > adjustment-tolerance
-      [ set max-sheep max-sheep - population-adjustment
-         set sheep-increasing? false ]
-      [ if sheep-increasing?
-      [ set max-sheep max-sheep + 1 ] ]
+    set fluctuation-tolerance a-fluctuation-tolerance
+
+    ; max-sheep has been manually changed, reset adjustment-value
+    if max-sheep != a-max-sheep [
+      set max-sheep a-max-sheep
+      set adjustment-amount a-initial-adjustment-amount
+    ]
   ]
 
   ask farmer-b [
     set section-3? b-section-3?
-    ifelse max-sheep - count fb-sheep > adjustment-tolerance
-      [ set max-sheep max-sheep - population-adjustment
-         set sheep-increasing? false ]
-      [ if sheep-increasing?
-        [ set max-sheep max-sheep + 1 ] ]
+    set fluctuation-tolerance a-fluctuation-tolerance
+
+    ; max-sheep has been manually changed, reset adjustment-value
+    if max-sheep != b-max-sheep [
+      set max-sheep b-max-sheep
+      set adjustment-amount b-initial-adjustment-amount
+    ]
   ]
 
   ; kill sheep if inputs change and they're no longer in a legal area
@@ -153,6 +173,50 @@ to move  ; sheep procedure
         if can-move-ahead? [ fd 1 stop ]
       ]
     ]
+end
+
+
+; automatically manages the maximum population of the farmer's sheep
+to manage-population ; farmer procedure
+  ifelse my-sheep-count <= max-sheep [
+    if adjustment-amount >= 1 [
+      ; keep track of the last 50 datapoints
+      set previous-populations lput (my-sheep-count) previous-populations
+
+      if length previous-populations >= 50 [
+        let delta max-sheep - mean previous-populations
+        if delta <= fluctuation-tolerance [
+          ifelse previous-adjustment = -1 [
+            ; reduce adjustment-amount as we went past the optimal max-sheep
+            set previous-adjustment 0
+            set adjustment-amount adjustment-amount / 2
+          ][
+            ; max-population is too low, increase it
+            update-max-sheep ceiling (max-sheep + adjustment-amount)
+            set previous-adjustment 1
+            set previous-populations []
+          ]
+        ]
+
+        if delta > fluctuation-tolerance [
+          ; max-population is too high, lower it
+          update-max-sheep ceiling (max-sheep - adjustment-amount)
+          set previous-populations []
+          set previous-adjustment -1
+        ]
+      ]
+    ]
+  ][
+    ; too many sheep, kill excess
+    ask n-of (my-sheep-count - max-sheep) sheep with [ grazier = myself ] [ die ]
+  ]
+end
+
+to update-max-sheep [ new-max ] ; farmer procedure
+  set max-sheep new-max
+  ifelse paddock = 1
+    [ set a-max-sheep new-max ]
+    [ set b-max-sheep new-max ]
 end
 
 ; helper function to check if moving to the next patch is legal
@@ -202,6 +266,10 @@ to display-labels
   ifelse show-energy?
     [ ask sheep [ set label round energy ] ]
     [ ask sheep [ set label "" ] ]
+end
+
+to-report my-sheep-count
+  report count sheep with [ grazier = myself ]
 end
 
 to-report farmer-a
@@ -284,9 +352,9 @@ HORIZONTAL
 
 SLIDER
 5
-450
+310
 180
-483
+343
 sheep-gain-from-food
 sheep-gain-from-food
 0.0
@@ -299,9 +367,9 @@ HORIZONTAL
 
 SLIDER
 5
-485
+345
 180
-518
+378
 sheep-reproduce-rate
 sheep-reproduce-rate
 1.0
@@ -329,9 +397,9 @@ HORIZONTAL
 
 SLIDER
 185
-450
+310
 350
-483
+343
 grass-regrowth-time
 grass-regrowth-time
 0
@@ -344,9 +412,9 @@ HORIZONTAL
 
 BUTTON
 125
-523
+383
 235
-578
+438
 Setup
 setup
 NIL
@@ -361,9 +429,9 @@ NIL
 
 BUTTON
 240
-523
+383
 350
-578
+438
 Go
 go
 T
@@ -451,9 +519,9 @@ Farmer B Settings
 
 SWITCH
 185
-485
+345
 350
-518
+378
 show-energy?
 show-energy?
 1
@@ -484,9 +552,9 @@ b-section-3?
 
 TEXTBOX
 110
-425
+285
 270
-445
+305
 Miscellaneous Settings
 16
 0.0
@@ -494,9 +562,9 @@ Miscellaneous Settings
 
 BUTTON
 5
-523
+383
 120
-578
+438
 Default Settings
 load-default-settings
 NIL
@@ -741,44 +809,115 @@ count grass
 11
 
 SLIDER
-75
-280
-280
-313
-population-adjustment
-population-adjustment
-0
-10
-2.0
-1
-1
-sheep/tick
-HORIZONTAL
-
-SLIDER
-75
-235
-277
-268
-adjustment-tolerance
-adjustment-tolerance
+5
+205
+180
+238
+a-fluctuation-tolerance
+a-fluctuation-tolerance
 1
 50
-10.0
+5.0
 1
 1
-sheep
+NIL
 HORIZONTAL
 
 TEXTBOX
-75
-200
-300
-236
+65
+145
+280
+165
 Automatic Population Settings
 16
 0.0
 1
+
+SLIDER
+185
+205
+350
+238
+b-fluctuation-tolerance
+b-fluctuation-tolerance
+1
+50
+5.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+5
+70
+180
+103
+a-max-sheep
+a-max-sheep
+1
+300
+131.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+185
+70
+350
+103
+b-max-sheep
+b-max-sheep
+1
+300
+132.0
+1
+1
+NIL
+HORIZONTAL
+
+SWITCH
+5
+170
+350
+203
+auto-manage-populations?
+auto-manage-populations?
+0
+1
+-1000
+
+SLIDER
+5
+240
+180
+273
+a-initial-adjustment-amount
+a-initial-adjustment-amount
+1
+50
+32.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+185
+240
+350
+273
+b-initial-adjustment-amount
+b-initial-adjustment-amount
+1
+50
+32.0
+1
+1
+NIL
+HORIZONTAL
 
 @#$#@#$#@
 ## WHAT IS IT?
