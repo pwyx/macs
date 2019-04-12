@@ -126,7 +126,7 @@ to go
 
   ask patches [ grow-grass ]
 
-  if auto-manage-populations? [ ask farmers [ manage-population ] ]
+  if farmers-manage-populations? [ ask farmers [ manage-population ] ]
 
   tick
   display-labels
@@ -147,7 +147,7 @@ to update-inputs  ; system procedure
 
   ask farmer-b [
     set section-3? b-section-3?
-    set fluctuation-tolerance a-fluctuation-tolerance
+    set fluctuation-tolerance b-fluctuation-tolerance
 
     ; max-sheep slider ui was altered, reset population adjustment anount
     if max-sheep != b-max-sheep [
@@ -180,13 +180,14 @@ end
 
 ; automatically manages the maximum population of the farmer's sheep
 to manage-population ; farmer procedure
-  ifelse my-sheep-count <= max-sheep [
-    if adjustment-amount >= 1 [
-      ; keep track sheep populations
+  if adjustment-amount >= 1 [
+    ifelse my-sheep-count <= max-sheep [
+      ; keep track of sheep populations
       set previous-populations lput (my-sheep-count) previous-populations
       if length previous-populations >= max-population-list-length [
-        let delta max-sheep - mean previous-populations
-        ifelse delta <= fluctuation-tolerance [
+
+        let delta abs(max-sheep - mean previous-populations)
+        if delta <= fluctuation-tolerance [
           ifelse previous-adjustment = -1 [
             ; reduce adjustment-amount as we went past the optimal max-sheep
             set previous-adjustment 0
@@ -197,17 +198,18 @@ to manage-population ; farmer procedure
             set previous-adjustment 1
             set previous-populations []
           ]
-        ][
+        ]
+        if delta > fluctuation-tolerance [
           ; max-sheep is too high, lower it
           update-max-sheep ceiling (max-sheep - adjustment-amount)
           set previous-adjustment -1
           set previous-populations []
         ]
       ]
+    ][
+      ; cull excess sheep
+      ask n-of (my-sheep-count - max-sheep) sheep with [ grazier = myself ] [ die ]
     ]
-  ][
-    ; cull excess sheep
-    ask n-of (my-sheep-count - max-sheep) sheep with [ grazier = myself ] [ die ]
   ]
 end
 
@@ -881,8 +883,8 @@ SWITCH
 200
 350
 233
-auto-manage-populations?
-auto-manage-populations?
+farmers-manage-populations?
+farmers-manage-populations?
 0
 1
 -1000
