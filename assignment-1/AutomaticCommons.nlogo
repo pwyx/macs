@@ -5,7 +5,7 @@ farmers-own [
   paddock               ; the section of the world the farmer owns (either 1 or 2)
   max-sheep             ; the maximum amount of sheep the farmer wants to have
   fluctuation-tolerance ; the amount of sheep a farmer will tolerate their sheep population fluctuating by
-  previous-populations  ; last 100 counts of sheep taken at each tick
+  previous-populations  ; last x counts of sheep taken at each tick
   previous-adjustment   ; last direction of adjustment (up = 1, down = -1 or none = 0)
   adjustment-amount     ; the number of sheep to add or remove to max-sheep in one adjustment
   sheep-increasing?     ; the number of sheep is still stabilizing
@@ -27,8 +27,9 @@ to load-default-settings
   set b-initial-sheep 50
   set a-max-sheep 100
   set b-max-sheep 100
-  set a-section-3? false
-  set b-section-3? false
+  set a-section-3? true
+  set b-section-3? true
+  set max-population-list-length 50
   set a-initial-adjustment-amount 32
   set b-initial-adjustment-amount 32
   set a-fluctuation-tolerance 5
@@ -125,18 +126,19 @@ to go
 
   ask patches [ grow-grass ]
 
-  ask farmers [ manage-population ]
+  if auto-manage-populations? [ ask farmers [ manage-population ] ]
 
   tick
   display-labels
 end
 
+; update sliders if internal representation changes
 to update-inputs  ; system procedure
   ask farmer-a [
     set section-3? a-section-3?
     set fluctuation-tolerance a-fluctuation-tolerance
 
-    ; max-sheep has been manually changed, reset adjustment-value
+    ; max-sheep slider ui was altered, reset population adjustment anount
     if max-sheep != a-max-sheep [
       set max-sheep a-max-sheep
       set adjustment-amount a-initial-adjustment-amount
@@ -147,7 +149,7 @@ to update-inputs  ; system procedure
     set section-3? b-section-3?
     set fluctuation-tolerance a-fluctuation-tolerance
 
-    ; max-sheep has been manually changed, reset adjustment-value
+    ; max-sheep slider ui was altered, reset population adjustment anount
     if max-sheep != b-max-sheep [
       set max-sheep b-max-sheep
       set adjustment-amount b-initial-adjustment-amount
@@ -180,34 +182,31 @@ end
 to manage-population ; farmer procedure
   ifelse my-sheep-count <= max-sheep [
     if adjustment-amount >= 1 [
-      ; keep track of the last 50 datapoints
+      ; keep track sheep populations
       set previous-populations lput (my-sheep-count) previous-populations
-
-      if length previous-populations >= 50 [
+      if length previous-populations >= max-population-list-length [
         let delta max-sheep - mean previous-populations
-        if delta <= fluctuation-tolerance [
+        ifelse delta <= fluctuation-tolerance [
           ifelse previous-adjustment = -1 [
             ; reduce adjustment-amount as we went past the optimal max-sheep
             set previous-adjustment 0
             set adjustment-amount adjustment-amount / 2
           ][
-            ; max-population is too low, increase it
+            ; max-sheep is too low, increase it
             update-max-sheep ceiling (max-sheep + adjustment-amount)
             set previous-adjustment 1
             set previous-populations []
           ]
-        ]
-
-        if delta > fluctuation-tolerance [
-          ; max-population is too high, lower it
+        ][
+          ; max-sheep is too high, lower it
           update-max-sheep ceiling (max-sheep - adjustment-amount)
-          set previous-populations []
           set previous-adjustment -1
+          set previous-populations []
         ]
       ]
     ]
   ][
-    ; too many sheep, kill excess
+    ; cull excess sheep
     ask n-of (my-sheep-count - max-sheep) sheep with [ grazier = myself ] [ die ]
   ]
 end
@@ -338,7 +337,7 @@ ticks
 SLIDER
 5
 35
-180
+175
 68
 a-initial-sheep
 a-initial-sheep
@@ -352,9 +351,9 @@ HORIZONTAL
 
 SLIDER
 5
-310
-180
-343
+450
+175
+483
 sheep-gain-from-food
 sheep-gain-from-food
 0.0
@@ -367,9 +366,9 @@ HORIZONTAL
 
 SLIDER
 5
-345
-180
-378
+485
+175
+518
 sheep-reproduce-rate
 sheep-reproduce-rate
 1.0
@@ -381,7 +380,7 @@ sheep-reproduce-rate
 HORIZONTAL
 
 SLIDER
-185
+180
 35
 350
 68
@@ -396,10 +395,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-185
-310
+180
+450
 350
-343
+483
 grass-regrowth-time
 grass-regrowth-time
 0
@@ -412,9 +411,9 @@ HORIZONTAL
 
 BUTTON
 125
-383
+523
 235
-438
+578
 Setup
 setup
 NIL
@@ -429,9 +428,9 @@ NIL
 
 BUTTON
 240
-383
+523
 350
-438
+578
 Go
 go
 T
@@ -445,13 +444,13 @@ NIL
 0
 
 PLOT
-5
-585
+930
 350
-730
-populations
-time
-pop.
+1465
+685
+Sheep Populations vs Time
+Ticks
+Sheep
 0.0
 200.0
 0.0
@@ -460,9 +459,8 @@ true
 true
 "" ""
 PENS
-"Farmer A's Sheep" 1.0 0 -612749 true "" "plot count fa-sheep"
-"Farmer B's Sheep" 1.0 0 -16449023 true "" "plot count fb-sheep"
-"Grass / 4" 1.0 0 -10899396 true "" "plot count grass / 4"
+"Farmer A's Sheep" 1.0 0 -2674135 true "" "plot count fa-sheep"
+"Farmer B's Sheep" 1.0 0 -13345367 true "" "plot count fb-sheep"
 
 MONITOR
 530
@@ -487,10 +485,10 @@ count fb-sheep
 11
 
 MONITOR
-930
-385
-1000
-430
+25
+585
+95
+630
 S1 Grass
 count grass with [ section = 1 ]
 0
@@ -498,9 +496,9 @@ count grass with [ section = 1 ]
 11
 
 TEXTBOX
-35
+30
 10
-165
+160
 30
 Farmer A Settings
 16
@@ -508,9 +506,9 @@ Farmer A Settings
 1
 
 TEXTBOX
-210
+205
 10
-340
+335
 30
 Farmer B Settings
 16
@@ -518,10 +516,10 @@ Farmer B Settings
 1
 
 SWITCH
-185
-345
+180
+485
 350
-378
+518
 show-energy?
 show-energy?
 1
@@ -531,30 +529,30 @@ show-energy?
 SWITCH
 5
 105
-180
+175
 138
 a-section-3?
 a-section-3?
-1
+0
 1
 -1000
 
 SWITCH
-185
+180
 105
 350
 138
 b-section-3?
 b-section-3?
-1
+0
 1
 -1000
 
 TEXTBOX
 110
-285
+425
 270
-305
+445
 Miscellaneous Settings
 16
 0.0
@@ -562,9 +560,9 @@ Miscellaneous Settings
 
 BUTTON
 5
-383
+523
 120
-438
+578
 Default Settings
 load-default-settings
 NIL
@@ -578,10 +576,10 @@ NIL
 1
 
 MONITOR
-930
-485
-1000
-530
+25
+635
+95
+680
 S2 Grass
 count grass with [ section = 2 ]
 0
@@ -589,10 +587,10 @@ count grass with [ section = 2 ]
 11
 
 MONITOR
-930
-435
-1000
-480
+175
+585
+245
+630
 S3 Grass
 count grass with [ section = 3 ]
 0
@@ -600,10 +598,10 @@ count grass with [ section = 3 ]
 11
 
 MONITOR
-1005
-385
-1075
-430
+100
+585
+170
+630
 S1 Grass %
 100 * (count grass with [ section = 1 ] / count patches with [ section = 1 ])
 2
@@ -611,10 +609,10 @@ S1 Grass %
 11
 
 MONITOR
-1005
-485
-1075
-530
+100
+635
+170
+680
 S2 Grass %
 100 * (count grass with [ section = 2 ] / count patches with [ section = 2 ])
 2
@@ -622,10 +620,10 @@ S2 Grass %
 11
 
 MONITOR
-1005
-435
-1075
-480
+250
+585
+320
+630
 S3 Grass %
 100 * (count grass with [ section = 3 ] / count patches with [ section = 3 ])
 2
@@ -787,10 +785,10 @@ FB S3 Sheep %
 11
 
 MONITOR
-1005
-535
-1075
-580
+250
+635
+320
+680
 Grass %
 100 * (count grass / count patches)
 2
@@ -798,10 +796,10 @@ Grass %
 11
 
 MONITOR
-930
-535
-1000
-580
+175
+635
+245
+680
 Grass
 count grass
 0
@@ -810,9 +808,9 @@ count grass
 
 SLIDER
 5
-205
-180
-238
+270
+175
+303
 a-fluctuation-tolerance
 a-fluctuation-tolerance
 1
@@ -825,19 +823,19 @@ HORIZONTAL
 
 TEXTBOX
 65
-145
+175
 280
-165
+195
 Automatic Population Settings
 16
 0.0
 1
 
 SLIDER
-185
-205
+180
+270
 350
-238
+303
 b-fluctuation-tolerance
 b-fluctuation-tolerance
 1
@@ -851,20 +849,20 @@ HORIZONTAL
 SLIDER
 5
 70
-180
+175
 103
 a-max-sheep
 a-max-sheep
 1
 300
-131.0
+100.0
 1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-185
+180
 70
 350
 103
@@ -872,7 +870,7 @@ b-max-sheep
 b-max-sheep
 1
 300
-132.0
+100.0
 1
 1
 NIL
@@ -880,9 +878,9 @@ HORIZONTAL
 
 SWITCH
 5
-170
+200
 350
-203
+233
 auto-manage-populations?
 auto-manage-populations?
 0
@@ -891,9 +889,9 @@ auto-manage-populations?
 
 SLIDER
 5
-240
-180
-273
+305
+175
+338
 a-initial-adjustment-amount
 a-initial-adjustment-amount
 1
@@ -905,10 +903,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-185
-240
+180
+305
 350
-273
+338
 b-initial-adjustment-amount
 b-initial-adjustment-amount
 1
@@ -917,6 +915,122 @@ b-initial-adjustment-amount
 1
 1
 NIL
+HORIZONTAL
+
+MONITOR
+5
+340
+175
+385
+Current A Adjustment Amount
+[ adjustment-amount ] of farmer-a
+2
+1
+11
+
+MONITOR
+180
+340
+350
+385
+Current B Adjustment Amount
+[ adjustment-amount ] of farmer-b
+2
+1
+11
+
+PLOT
+930
+690
+1465
+1025
+Grass % vs Time
+Ticks
+Grass
+0.0
+10.0
+0.0
+100.0
+true
+true
+"" ""
+PENS
+"Overall Grass %" 1.0 0 -13840069 true "" "plot 100 * (count grass / count patches)"
+"Section 1 Grass %" 1.0 0 -2674135 true "" "plot 100 * (count grass with [ section = 1 ] / count patches with [ section = 1 ])"
+"Section 2 Grass %" 1.0 0 -13345367 true "" "plot 100 * (count grass with [ section = 2 ] / count patches with [ section = 2 ])"
+"Section 3 Grass %" 1.0 0 -8630108 true "" "plot 100 * (count grass with [ section = 3 ] / count patches with [ section = 3 ])"
+
+PLOT
+1470
+350
+2005
+685
+Sheep Per Section vs Time
+Ticks
+% Sheep
+0.0
+10.0
+0.0
+100.0
+true
+true
+"" ""
+PENS
+"Section 1" 1.0 0 -2674135 true "" "plot 100 * (count sheep with [ [ section ] of patch-here = 1 ]) / (count sheep)"
+"Section 2" 1.0 0 -13345367 true "" "plot 100 * (count sheep with [ [ section ] of patch-here = 2 ]) / (count sheep)"
+"Section 3" 1.0 0 -8630108 true "" "plot 100 * (count sheep with [ [ section ] of patch-here = 3 ]) / (count sheep)"
+
+PLOT
+930
+10
+1465
+345
+Farmer A's Sheep % Per Section vs Time
+Ticks
+Sheep
+0.0
+10.0
+0.0
+100.0
+true
+true
+"" ""
+PENS
+"Section 1" 1.0 0 -2674135 true "" "plot count fa-sheep with [ [ section ] of patch-here = 1 ]"
+"Section 3" 1.0 0 -8630108 true "" "plot count fa-sheep with [ [ section ] of patch-here = 3 ]"
+
+PLOT
+1470
+10
+2005
+345
+Farmer B's Sheep Population Per Section vs Time
+Ticks
+Sheep
+0.0
+10.0
+0.0
+100.0
+true
+true
+"" ""
+PENS
+"Section 2" 1.0 0 -13345367 true "" "plot count fb-sheep with [ [ section ] of patch-here = 2 ]"
+"Section 3" 1.0 0 -8630108 true "" "plot count fb-sheep with [ [ section ] of patch-here = 3 ]"
+
+SLIDER
+5
+235
+350
+268
+max-population-list-length
+max-population-list-length
+0
+100
+50.0
+10
+1
+counts
 HORIZONTAL
 
 @#$#@#$#@
